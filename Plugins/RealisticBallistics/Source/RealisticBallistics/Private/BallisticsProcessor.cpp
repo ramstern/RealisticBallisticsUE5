@@ -134,34 +134,71 @@ void UBallisticsProcessor::Execute(FMassEntityManager& entity_manager, FMassExec
 			float penetrated_depth = 0.f;
 
 
-			if(hit_result.bBlockingHit && !is_penetrating)
+			if(hit_result.bBlockingHit)
 			{
+				FVector height_field_pos = hit_result.ImpactPoint;
 				bool height_field_collision = hit_result.Component.IsValid() && hit_result.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
-				if(height_field_collision) 
-				{
-					context.Defer().DestroyEntity(context.GetEntity(i));
-					DrawDebugSphere(world, hit_result.ImpactPoint, 100.f, 12, FColor::Green, false, 10.f);
-				}
 
-				FHitResult reverse_hit;
-				world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
-
-				if(reverse_hit.bStartPenetrating)
+				if(!height_field_collision)
 				{
-					//projectile still in material this tick
-					penetrated_depth = FVector::Dist(hit_result.ImpactPoint, end);
-					
-					DrawDebugLine(world, hit_result.ImpactPoint, end, FColor::Orange, false, 10.f, SDPG_Foreground);
+					FHitResult reverse_hit;
+					world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
+
+					bool is_height_field = reverse_hit.Component.IsValid() && reverse_hit.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
+					if(is_height_field)
+					{
+						//we might have hit the underside of heightfield after a penetration of a normal object
+						query_params.AddIgnoredComponent(reverse_hit.Component);
+						world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
+						query_params.ClearIgnoredComponents();
+					}
+					///world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
+
+					//height_field_collision |= reverse_hit.Component.IsValid() && reverse_hit.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
+
+					if (hit_result.bStartPenetrating && reverse_hit.bStartPenetrating)
+					{
+						//projectile still in material this tick
+						penetrated_depth = FVector::Dist(start, end);
+
+						DrawDebugLine(world, start, end, FColor::Orange, false, 10.f, SDPG_Foreground);
+					}
+					else if(!hit_result.bStartPenetrating && reverse_hit.bStartPenetrating)
+					{
+						//projectile entered material this tick
+						penetrated_depth = FVector::Dist(hit_result.ImpactPoint, end);
+
+						DrawDebugLine(world, hit_result.ImpactPoint, end, FColor::Orange, false, 10.f, SDPG_Foreground);
+					}
+					else if (reverse_hit.bBlockingHit)
+					{
+						//projectile left material in this tick
+						penetrated_depth = FVector::Dist(hit_result.ImpactPoint, reverse_hit.ImpactPoint);
+
+						DrawDebugLine(world, hit_result.ImpactPoint, reverse_hit.ImpactPoint, FColor::Orange, false, 10.f, SDPG_Foreground);
+
+						FVector start_p = reverse_hit.ImpactPoint + (end - start).GetUnsafeNormal() * 0.01f;
+						FHitResult rest_hit;
+						world->LineTraceSingleByChannel(rest_hit, start_p, end, channel, query_params);
+
+						height_field_collision |= rest_hit.Component.IsValid() && rest_hit.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
+						height_field_pos = rest_hit.ImpactPoint;
+
+						if(height_field_collision)
+						{
+							context.Defer().DestroyEntity(context.GetEntity(i));
+							DrawDebugSphere(world, height_field_pos, 100.f, 12, FColor::Green, false, 10.f);
+						}
+
+					}
 				}
 				else
 				{
-					//projectile left material in same tick
-					penetrated_depth = FVector::Dist(hit_result.ImpactPoint, reverse_hit.ImpactPoint);
-
-					DrawDebugLine(world, hit_result.ImpactPoint, reverse_hit.ImpactPoint, FColor::Orange, false, 10.f, SDPG_Foreground);
+					context.Defer().DestroyEntity(context.GetEntity(i));
+					DrawDebugSphere(world, height_field_pos, 100.f, 12, FColor::Green, false, 10.f);
 				}
 			}
-			else if(is_penetrating)
+		/*	else if(is_penetrating)
 			{
 				penetrated_depth = FVector::Dist(start, end);
 
@@ -177,7 +214,7 @@ void UBallisticsProcessor::Execute(FMassEntityManager& entity_manager, FMassExec
 				}
 
 				DrawDebugLine(world, start, p_end, FColor::Orange, false, 10.f, SDPG_Foreground);
-			}
+			}*/
 
 			projectile_hitdata.total_penetration += penetrated_depth;
 
