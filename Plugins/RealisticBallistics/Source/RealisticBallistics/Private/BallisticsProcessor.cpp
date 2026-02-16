@@ -129,49 +129,59 @@ void UBallisticsProcessor::Execute(FMassEntityManager& entity_manager, FMassExec
 			query_params.bReturnPhysicalMaterial = true;
 			world->LineTraceSingleByChannel(hit_result, start, end, channel, query_params);
 
-			DrawDebugLine(world, start, end, FColor::Red, false, 10.f, 0);
-
-			DrawDebugPoint(world, start, 4.f, FColor::Red, false, 10.f);
-
 			bool is_penetrating = hit_result.bStartPenetrating || projectile_hitdata.inside_nonvolume;
+			//penetration of projectile this tick
+			float penetrated_depth = 0.f;
 
-			if(hit_result.bBlockingHit)
+
+			if(hit_result.bBlockingHit && !is_penetrating)
 			{
-				// decide either deflect or penetrate
-				
-				bool is_height_field_collision = hit_result.Component.IsValid() && hit_result.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
-				if(is_height_field_collision) projectile_hitdata.entered_nonvolume = true;
+				bool height_field_collision = hit_result.Component.IsValid() && hit_result.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
+				if(height_field_collision) 
+				{
+					context.Defer().DestroyEntity(context.GetEntity(i));
+					DrawDebugSphere(world, hit_result.ImpactPoint, 100.f, 12, FColor::Green, false, 10.f);
+				}
 
 				FHitResult reverse_hit;
 				world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
 
-				//penetration of projectile this tick
-				float penetrated_depth = 0.f;
-
 				if(reverse_hit.bStartPenetrating)
 				{
-					//projectile still inside material
+					//projectile still in material this tick
 					penetrated_depth = FVector::Dist(hit_result.ImpactPoint, end);
+					
 					DrawDebugLine(world, hit_result.ImpactPoint, end, FColor::Orange, false, 10.f, SDPG_Foreground);
-
-					projectile_hitdata.entered_nonvolume = false;
-					projectile_hitdata.inside_nonvolume = true;
 				}
-				else if(reverse_hit.bBlockingHit)
+				else
 				{
+					//projectile left material in same tick
 					penetrated_depth = FVector::Dist(hit_result.ImpactPoint, reverse_hit.ImpactPoint);
+
 					DrawDebugLine(world, hit_result.ImpactPoint, reverse_hit.ImpactPoint, FColor::Orange, false, 10.f, SDPG_Foreground);
-
-					projectile_hitdata.inside_nonvolume = false;
 				}
-				else 
-				{
-					penetrated_depth = FVector::Dist(start, end);
-					DrawDebugLine(world, start, end, FColor::Orange, false, 10.f, SDPG_Foreground);
-				}
-
-				projectile_hitdata.total_penetration += penetrated_depth;
 			}
+			else if(is_penetrating)
+			{
+				penetrated_depth = FVector::Dist(start, end);
+
+				FHitResult reverse_hit;
+				world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
+				
+				FVector p_end = end;
+
+				if(reverse_hit.bBlockingHit && !reverse_hit.bStartPenetrating)
+				{
+					penetrated_depth = FVector::Dist(start, reverse_hit.ImpactPoint);
+					p_end = reverse_hit.ImpactPoint;
+				}
+
+				DrawDebugLine(world, start, p_end, FColor::Orange, false, 10.f, SDPG_Foreground);
+			}
+
+			projectile_hitdata.total_penetration += penetrated_depth;
+
+			DrawDebugLine(world, start, end, FColor::Red, false, 10.f, 0);
 
 			FVector3f gravity_accel = ballistics_sys->GetGravity();
 
