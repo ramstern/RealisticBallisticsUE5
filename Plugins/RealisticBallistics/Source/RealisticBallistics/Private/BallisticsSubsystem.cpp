@@ -33,9 +33,9 @@ FMassEntityHandle UBallisticsSubsystem::Projectile(const FVector3f& proj_pos, co
 
 	FInstancedStruct projectile_hitdata = FInstancedStruct::Make<FProjectileHitData>();
 	auto& hit_data = projectile_hitdata.GetMutable<FProjectileHitData>();
-	hit_data.entered_nonvolume = false;
-	hit_data.inside_nonvolume = false;
+	hit_data.started_penetration = false;
 	hit_data.total_penetration = 0.f;
+	hit_data.starting_penetration = 0.f;
 	fragments.Add(MoveTemp(projectile_hitdata));
 
 	fragments.Add(FInstancedStruct::Make(properties));

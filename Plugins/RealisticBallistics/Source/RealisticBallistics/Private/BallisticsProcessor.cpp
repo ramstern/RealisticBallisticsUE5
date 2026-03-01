@@ -11,9 +11,9 @@
 UBallisticsProcessor::UBallisticsProcessor()
 {
 	bAutoRegisterWithProcessingPhases = true;
-	ExecutionFlags = (int32)(EProcessorExecutionFlags::Client | EProcessorExecutionFlags::Standalone);	
+	ExecutionFlags = (int32)(EProcessorExecutionFlags::Client | EProcessorExecutionFlags::Standalone);
 	ProcessingPhase = EMassProcessingPhase::PrePhysics;
-	bRequiresGameThreadExecution = true;	
+	bRequiresGameThreadExecution = true;
 	QueryBasedPruning = EMassQueryBasedPruning::Never;
 
 	drag_table = ConstructorHelpers::FObjectFinder<UCurveTable>(TEXT("CurveTable'/RealisticBallistics/drag_tables.drag_tables'")).Object;
@@ -34,200 +34,204 @@ void UBallisticsProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>
 void UBallisticsProcessor::Execute(FMassEntityManager& entity_manager, FMassExecutionContext& context)
 {
 	const auto ballistics_settings = GetDefault<UBallisticsProjectSettings>();
-	auto ballistics_sys = GetWorld()->GetSubsystem<UBallisticsSubsystem>();		
+	auto ballistics_sys = GetWorld()->GetSubsystem<UBallisticsSubsystem>();
 
-	projectile_simulation_step.ForEachEntityChunk(entity_manager, context, [world = GetWorld(), drag_curve_table = drag_table, &ballistics_settings, &ballistics_sys](FMassExecutionContext& context)
-	{
-		auto projectile_transforms = context.GetMutableFragmentView<FProjectileTransform>();
-		auto projectile_physdatas = context.GetMutableFragmentView<FProjectilePhysicsData>();
-		auto projectile_hitdatas = context.GetMutableFragmentView<FProjectileHitData>();
-		auto projectile_datas = context.GetFragmentView<FProjectileProperties>();
-
-		int32 num_projectiles = context.GetNumEntities();
-
-		for (int32 i = 0; i < num_projectiles; i++)
+	projectile_simulation_step.ForEachEntityChunk(entity_manager, context,
+		[this, &ballistics_settings, &ballistics_sys]
+		(FMassExecutionContext& context)
 		{
-			auto& projectile_transform = projectile_transforms[i];
-			auto& projectile_physdata = projectile_physdatas[i];
-			auto& projectile_hitdata = projectile_hitdatas[i];
-			const auto& projectile_properties = projectile_datas[i];
-			
-			FRealCurve* cd_curve;
-			switch(projectile_properties.drag_model)
+			auto projectile_transforms = context.GetMutableFragmentView<FProjectileTransform>();
+			auto projectile_physdatas = context.GetMutableFragmentView<FProjectilePhysicsData>();
+			auto projectile_hitdatas = context.GetMutableFragmentView<FProjectileHitData>();
+			auto projectile_datas = context.GetFragmentView<FProjectileProperties>();
+
+			int32 num_projectiles = context.GetNumEntities();
+
+			for (int32 i = 0; i < num_projectiles; i++)
 			{
-			case FProjectileProperties::G1:
-			{
-				cd_curve = drag_curve_table->FindCurveUnchecked(FName("DragTable.G1"));
-				break;
-			}
-			case FProjectileProperties::G2:
-			{
-				cd_curve = drag_curve_table->FindCurveUnchecked(FName("DragTable.G2"));
-				break;
-			}
-			case FProjectileProperties::G5:
-			{
-				cd_curve = drag_curve_table->FindCurveUnchecked(FName("DragTable.G5"));
-				break;
-			}
-			case FProjectileProperties::G6:
-			{
-				cd_curve = drag_curve_table->FindCurveUnchecked(FName("DragTable.G6"));
-				break;
-			}
-			case FProjectileProperties::G7:
-			{
-				cd_curve = drag_curve_table->FindCurveUnchecked(FName("DragTable.G7"));
-				break;
-			}
-			case FProjectileProperties::G8:
-			{
-				cd_curve = drag_curve_table->FindCurveUnchecked(FName("DragTable.G8"));
-				break;
-			}
-			case FProjectileProperties::SPHERE:
-			{
-				cd_curve = drag_curve_table->FindCurveUnchecked(FName("DragTable.Sphere"));
-				break;
-			}
-			default:
-				cd_curve = nullptr;
-			}
+				auto& projectile_transform = projectile_transforms[i];
+				auto& projectile_physdata = projectile_physdatas[i];
+				auto& projectile_hitdata = projectile_hitdatas[i];
+				const auto& projectile_properties = projectile_datas[i];
+				const auto world = GetWorld();
 
-			// M
-			float mach_number = projectile_physdata.velocity.Length() / SOUND_SPEED;
+				const ECollisionChannel channel = ballistics_settings->projectile_trace_channel;
 
-			// Cd standardized
-			float standard_cd = cd_curve->Eval(mach_number);
-			 
-			// A = pi r^2
- 			float cross_section_area = UE_PI*(projectile_properties.diameter*0.5f)*(projectile_properties.diameter*0.5f);
+				FHitResult hit_result;
+				FVector start = static_cast<FVector>(projectile_transform.previous_position);
+				FVector end = static_cast<FVector>(projectile_transform.position);
+				FCollisionQueryParams query_params(SCENE_QUERY_STAT_NAME_ONLY(ProjectileTrace));
+				query_params.bReturnPhysicalMaterial = true;
+				world->LineTraceSingleByChannel(hit_result, start, end, channel, query_params);
 
-			// SD = m / A
-			float cross_section_density = projectile_properties.mass / cross_section_area;
+				//penetration of projectile this tick
+				float penetrated_depth = 0.f;
+				bool is_penetrating = false;
 
-			// assume input BC is imperial 
-			float si_bc = projectile_properties.ballistic_coefficient * BC_TO_SI;
-
-			// i = SD / C
-			float form_factor = cross_section_density / si_bc;
-
-			FVector3f wind_velocity = ballistics_sys->GetWindVector();
-			FVector3f relative_velocity = projectile_physdata.velocity - wind_velocity;
-
-			// a = p pi r^2 SD/C Cstd / 2 m (can be simplified, but later)
-			FVector3f drag_accel = - ballistics_sys->GetAirDensity() * cross_section_area * (form_factor * standard_cd) / (2.f * projectile_properties.mass) * 
-				relative_velocity.Length() * relative_velocity;
-
-			float dt = context.GetDeltaTimeSeconds();
-			const ECollisionChannel channel = ballistics_settings->projectile_trace_channel;
-
-			FHitResult hit_result;
-			FVector start = static_cast<FVector>(projectile_transform.previous_position);
-			FVector end = static_cast<FVector>(projectile_transform.position);
-			FCollisionQueryParams query_params(SCENE_QUERY_STAT_NAME_ONLY(ProjectileTrace));
-			query_params.bReturnPhysicalMaterial = true;
-			world->LineTraceSingleByChannel(hit_result, start, end, channel, query_params);
-
-			bool is_penetrating = hit_result.bStartPenetrating || projectile_hitdata.inside_nonvolume;
-			//penetration of projectile this tick
-			float penetrated_depth = 0.f;
-
-
-			if(hit_result.bBlockingHit)
-			{
-				FVector height_field_pos = hit_result.ImpactPoint;
-				bool height_field_collision = hit_result.Component.IsValid() && hit_result.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
-
-				if(!height_field_collision)
+				if (hit_result.bBlockingHit)
 				{
-					FHitResult reverse_hit;
-					world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
+					FVector height_field_pos = hit_result.ImpactPoint;
 
-					bool is_height_field = reverse_hit.Component.IsValid() && reverse_hit.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
-					if(is_height_field)
+					bool height_field_collision = hit_result.Component.IsValid() && hit_result.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
+
+					if (!height_field_collision)
 					{
-						//we might have hit the underside of heightfield after a penetration of a normal object
-						query_params.AddIgnoredComponent(reverse_hit.Component);
+						FHitResult reverse_hit;
 						world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
-						query_params.ClearIgnoredComponents();
-					}
-					///world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
 
-					//height_field_collision |= reverse_hit.Component.IsValid() && reverse_hit.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
-
-					if (hit_result.bStartPenetrating && reverse_hit.bStartPenetrating)
-					{
-						//projectile still in material this tick
-						penetrated_depth = FVector::Dist(start, end);
-
-						DrawDebugLine(world, start, end, FColor::Orange, false, 10.f, SDPG_Foreground);
-					}
-					else if(!hit_result.bStartPenetrating && reverse_hit.bStartPenetrating)
-					{
-						//projectile entered material this tick
-						penetrated_depth = FVector::Dist(hit_result.ImpactPoint, end);
-
-						DrawDebugLine(world, hit_result.ImpactPoint, end, FColor::Orange, false, 10.f, SDPG_Foreground);
-					}
-					else if (reverse_hit.bBlockingHit)
-					{
-						//projectile left material in this tick
-						penetrated_depth = FVector::Dist(hit_result.ImpactPoint, reverse_hit.ImpactPoint);
-
-						DrawDebugLine(world, hit_result.ImpactPoint, reverse_hit.ImpactPoint, FColor::Orange, false, 10.f, SDPG_Foreground);
-
-						FVector start_p = reverse_hit.ImpactPoint + (end - start).GetUnsafeNormal() * 0.01f;
-						FHitResult rest_hit;
-						world->LineTraceSingleByChannel(rest_hit, start_p, end, channel, query_params);
-
-						height_field_collision |= rest_hit.Component.IsValid() && rest_hit.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
-						height_field_pos = rest_hit.ImpactPoint;
-
-						if(height_field_collision)
+						bool is_height_field = reverse_hit.Component.IsValid() && reverse_hit.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
+						if (is_height_field)
 						{
-							context.Defer().DestroyEntity(context.GetEntity(i));
-							DrawDebugSphere(world, height_field_pos, 100.f, 12, FColor::Green, false, 10.f);
+							//we might have hit the underside of heightfield after a penetration of a normal object
+							query_params.AddIgnoredComponent(reverse_hit.Component);
+							world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
+							query_params.ClearIgnoredComponents();
 						}
 
+						if (hit_result.bStartPenetrating && reverse_hit.bStartPenetrating)
+						{
+							//projectile still in material this tick
+							penetrated_depth = FVector::Dist(start, end);
+							is_penetrating = true;
+
+							DrawDebugLine(world, start, end, FColor::Orange, false, 10.f, SDPG_Foreground);
+						}
+						else if (!hit_result.bStartPenetrating && reverse_hit.bStartPenetrating)
+						{
+							//projectile entered material this tick
+							penetrated_depth = FVector::Dist(hit_result.ImpactPoint, end);
+							is_penetrating = true;
+
+							DrawDebugLine(world, hit_result.ImpactPoint, end, FColor::Orange, false, 10.f, SDPG_Foreground);
+						}
+						else if (reverse_hit.bBlockingHit)
+						{
+							//projectile left material in this tick
+							penetrated_depth = FVector::Dist(hit_result.ImpactPoint, reverse_hit.ImpactPoint);
+							is_penetrating = true;
+
+							DrawDebugLine(world, hit_result.ImpactPoint, reverse_hit.ImpactPoint, FColor::Orange, false, 10.f, SDPG_Foreground);
+
+							FVector start_p = reverse_hit.ImpactPoint + (end - start).GetUnsafeNormal() * 0.01f;
+							FHitResult rest_hit;
+							world->LineTraceSingleByChannel(rest_hit, start_p, end, channel, query_params);
+
+							height_field_collision |= rest_hit.Component.IsValid() && rest_hit.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
+							height_field_pos = rest_hit.ImpactPoint;
+
+							if (height_field_collision)
+							{
+								context.Defer().DestroyEntity(context.GetEntity(i));
+								DrawDebugSphere(world, height_field_pos, 100.f, 12, FColor::Green, false, 10.f);
+							}
+
+						}
+					}
+					else
+					{
+						context.Defer().DestroyEntity(context.GetEntity(i));
+						DrawDebugSphere(world, height_field_pos, 100.f, 12, FColor::Green, false, 10.f);
 					}
 				}
-				else
+
+
+				projectile_hitdata.total_penetration += penetrated_depth;
+
+				DrawDebugLine(world, start, end, FColor::Red, false, 10.f, 0);
+
+				if (is_penetrating && !projectile_hitdata.started_penetration)
 				{
-					context.Defer().DestroyEntity(context.GetEntity(i));
-					DrawDebugSphere(world, height_field_pos, 100.f, 12, FColor::Green, false, 10.f);
+					projectile_hitdata.started_penetration = true;
+					projectile_transform.position = static_cast<FVector3f>(hit_result.ImpactPoint);
+
+					projectile_hitdata.total_penetration -= penetrated_depth;
 				}
+
+				float dt = context.GetDeltaTimeSeconds();
+
+				ProjectileIntegrateStep(dt, projectile_properties, projectile_transform, projectile_physdata, ballistics_sys);
 			}
-		/*	else if(is_penetrating)
-			{
-				penetrated_depth = FVector::Dist(start, end);
+		});
+}
 
-				FHitResult reverse_hit;
-				world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
-				
-				FVector p_end = end;
+void UBallisticsProcessor::ProjectileIntegrateStep(float dt,
+	const FProjectileProperties& projectile_properties, FProjectileTransform& projectile_transform, FProjectilePhysicsData& projectile_physdata,
+	const UBallisticsSubsystem* ballistics_sys)
+{
+	FRealCurve* cd_curve;
+	switch (projectile_properties.drag_model)
+	{
+	case FProjectileProperties::G1:
+	{
+		cd_curve = drag_table->FindCurveUnchecked(FName("DragTable.G1"));
+		break;
+	}
+	case FProjectileProperties::G2:
+	{
+		cd_curve = drag_table->FindCurveUnchecked(FName("DragTable.G2"));
+		break;
+	}
+	case FProjectileProperties::G5:
+	{
+		cd_curve = drag_table->FindCurveUnchecked(FName("DragTable.G5"));
+		break;
+	}
+	case FProjectileProperties::G6:
+	{
+		cd_curve = drag_table->FindCurveUnchecked(FName("DragTable.G6"));
+		break;
+	}
+	case FProjectileProperties::G7:
+	{
+		cd_curve = drag_table->FindCurveUnchecked(FName("DragTable.G7"));
+		break;
+	}
+	case FProjectileProperties::G8:
+	{
+		cd_curve = drag_table->FindCurveUnchecked(FName("DragTable.G8"));
+		break;
+	}
+	case FProjectileProperties::SPHERE:
+	{
+		cd_curve = drag_table->FindCurveUnchecked(FName("DragTable.Sphere"));
+		break;
+	}
+	default:
+		cd_curve = nullptr;
+	}
 
-				if(reverse_hit.bBlockingHit && !reverse_hit.bStartPenetrating)
-				{
-					penetrated_depth = FVector::Dist(start, reverse_hit.ImpactPoint);
-					p_end = reverse_hit.ImpactPoint;
-				}
+	// M
+	float mach_number = projectile_physdata.velocity.Length() / SOUND_SPEED;
 
-				DrawDebugLine(world, start, p_end, FColor::Orange, false, 10.f, SDPG_Foreground);
-			}*/
+	// Cd standardized
+	float standard_cd = cd_curve->Eval(mach_number);
 
-			projectile_hitdata.total_penetration += penetrated_depth;
+	// A = pi r^2
+	float cross_section_area = UE_PI * (projectile_properties.diameter * 0.5f) * (projectile_properties.diameter * 0.5f);
 
-			DrawDebugLine(world, start, end, FColor::Red, false, 10.f, 0);
+	// SD = m / A
+	float cross_section_density = projectile_properties.mass / cross_section_area;
 
-			FVector3f gravity_accel = ballistics_sys->GetGravity();
+	// assume input BC is imperial 
+	float si_bc = projectile_properties.ballistic_coefficient * BC_TO_SI;
 
-			projectile_physdata.acceleration = drag_accel + gravity_accel; //+ wind_accel;
+	// i = SD / C
+	float form_factor = cross_section_density / si_bc;
 
-			projectile_transform.previous_position = projectile_transform.position;
-			//semi-implicit euler
-			projectile_physdata.velocity += projectile_physdata.acceleration * dt;
-			projectile_transform.position += (projectile_physdata.velocity * TO_UE_UNITS) * dt;
-		}
-	});
+	FVector3f wind_velocity = ballistics_sys->GetWindVector();
+	FVector3f relative_velocity = projectile_physdata.velocity - wind_velocity;
+
+	// a = p pi r^2 SD/C Cstd / 2 m (can be simplified, but later)
+	FVector3f drag_accel = -ballistics_sys->GetAirDensity() * cross_section_area * (form_factor * standard_cd) / (2.f * projectile_properties.mass) *
+		relative_velocity.Length() * relative_velocity;
+
+	projectile_transform.previous_position = projectile_transform.position;
+
+	DrawDebugPoint(GetWorld(), static_cast<FVector>(projectile_transform.position), 5.f, FColor::Red, false, 10.f, SDPG_Foreground);
+
+	FVector3f gravity_accel = ballistics_sys->GetGravity();
+	projectile_physdata.acceleration = drag_accel + gravity_accel; //+ wind_accel;
+	//semi-implicit euler
+	projectile_physdata.velocity += projectile_physdata.acceleration * dt;
+	projectile_transform.position += (projectile_physdata.velocity * TO_UE_UNITS) * dt;
 }

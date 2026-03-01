@@ -57,6 +57,6 @@ struct REALISTICBALLISTICS_API FProjectileHitData : public FMassFragment
 	GENERATED_BODY()
 
 	float total_penetration;
-	bool entered_nonvolume;
-	bool inside_nonvolume;
+	float starting_penetration;
+	bool started_penetration;
 };

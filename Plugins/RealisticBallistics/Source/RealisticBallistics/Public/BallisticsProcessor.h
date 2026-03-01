@@ -11,6 +11,12 @@
 /**
  * 
  */
+
+struct FProjectileProperties;
+struct FProjectileTransform;
+struct FProjectilePhysicsData;
+class UBallisticsSubsystem;
+
 UCLASS()
 class REALISTICBALLISTICS_API UBallisticsProcessor : public UMassProcessor
 {
@@ -23,6 +29,10 @@ protected:
 	
 	virtual void Execute(FMassEntityManager& entity_manager, FMassExecutionContext& context) override;
 private:
+
+	void ProjectileIntegrateStep(float dt, const FProjectileProperties& projectile_properties, FProjectileTransform& projectile_transform, FProjectilePhysicsData& projectile_physdata,
+								 const UBallisticsSubsystem* ballistics_sys);
+
 	FMassEntityQuery projectile_simulation_step;
 	TObjectPtr<UCurveTable> drag_table;
 };
