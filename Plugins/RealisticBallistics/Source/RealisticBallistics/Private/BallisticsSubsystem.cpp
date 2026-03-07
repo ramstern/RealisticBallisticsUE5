@@ -29,6 +29,7 @@ FMassEntityHandle UBallisticsSubsystem::Projectile(const FVector3f& proj_pos, co
 	FInstancedStruct projectile_physdata = FInstancedStruct::Make<FProjectilePhysicsData>();
 	auto& physics_data = projectile_physdata.GetMutable<FProjectilePhysicsData>();
 	physics_data.velocity = dir * muzzle_vel;
+	physics_data.external_force = FVector3f(0.f);
 	fragments.Add(MoveTemp(projectile_physdata));
 
 	FInstancedStruct projectile_hitdata = FInstancedStruct::Make<FProjectileHitData>();
@@ -39,7 +40,6 @@ FMassEntityHandle UBallisticsSubsystem::Projectile(const FVector3f& proj_pos, co
 	fragments.Add(MoveTemp(projectile_hitdata));
 
 	fragments.Add(FInstancedStruct::Make(properties));
-
 	return entity_manager.CreateEntity(fragments);
 }
 

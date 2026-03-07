@@ -30,8 +30,22 @@ protected:
 	virtual void Execute(FMassEntityManager& entity_manager, FMassExecutionContext& context) override;
 private:
 
+	struct ProjectileCollisionStepResult
+	{
+		float penetrated_depth;
+		bool is_penetrating;
+		FVector3f entry_point;
+	};
+
+	float step_accumulator = 0.f;
+	const int32 MAX_SUBSTEPS = 32;
+
+	void TickBallistics(FMassExecutionContext& context, float dt);
+
 	void ProjectileIntegrateStep(float dt, const FProjectileProperties& projectile_properties, FProjectileTransform& projectile_transform, FProjectilePhysicsData& projectile_physdata,
 								 const UBallisticsSubsystem* ballistics_sys);
+	
+	ProjectileCollisionStepResult ProjectileCollisionStep(const int proj_ent, const FProjectileTransform& projectile_transform, FMassExecutionContext& context, ECollisionChannel channel);
 
 	FMassEntityQuery projectile_simulation_step;
 	TObjectPtr<UCurveTable> drag_table;

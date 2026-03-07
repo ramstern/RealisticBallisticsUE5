@@ -47,6 +47,7 @@ struct REALISTICBALLISTICS_API FProjectilePhysicsData : public FMassFragment
 {
 	GENERATED_BODY()
 
+	FVector3f external_force;
 	FVector3f velocity;
 	FVector3f acceleration;
 };

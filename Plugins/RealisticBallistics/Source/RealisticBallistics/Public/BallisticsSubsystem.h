@@ -63,4 +63,10 @@ public:
 
 	UPROPERTY(EditAnywhere, Config, Category = "Ballistics|Collision")
 	TEnumAsByte<ECollisionChannel> projectile_trace_channel = ECC_Visibility;
+
+	UPROPERTY(EditAnywhere, Config, Category ="Ballistics|Simulation")
+	float sim_fixed_step = 1.f / 60.f;
+
+	UPROPERTY(EditAnywhere, Config, Category = "Ballistics|Penetration")
+	int32 penetration_substep_factor = 3;
 };
