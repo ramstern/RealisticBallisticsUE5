@@ -47,6 +47,8 @@ private:
 	
 	ProjectileCollisionStepResult ProjectileCollisionStep(const int proj_ent, const FProjectileTransform& projectile_transform, FMassExecutionContext& context, ECollisionChannel channel);
 
+	void KillProjectile(FMassExecutionContext& context, int i);
+
 	FMassEntityQuery projectile_simulation_step;
 	TObjectPtr<UCurveTable> drag_table;
 };

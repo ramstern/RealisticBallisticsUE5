@@ -71,6 +71,8 @@ void UBallisticsProcessor::TickBallistics(FMassExecutionContext& context, float 
 				auto& projectile_hitdata = projectile_hitdatas[i];
 				const auto& projectile_properties = projectile_datas[i];
 
+				if(projectile_transform.position.Z < ballistics_settings->destroy_projectile_below) KillProjectile(context, i);
+
 				if (projectile_hitdata.started_penetration)
 				{
 					for (int32 substep = 0; substep < ballistics_settings->penetration_substep_factor; substep++)
@@ -248,15 +250,6 @@ UBallisticsProcessor::ProjectileCollisionStepResult UBallisticsProcessor::Projec
 			FHitResult reverse_hit;
 			world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
 
-			bool is_height_field = reverse_hit.Component.IsValid() && reverse_hit.Component->IsA<ULandscapeHeightfieldCollisionComponent>();
-			if (is_height_field)
-			{
-				//we might have hit the underside of heightfield after a penetration of a normal object
-				query_params.AddIgnoredComponent(reverse_hit.Component);
-				world->LineTraceSingleByChannel(reverse_hit, end, start, channel, query_params);
-				query_params.ClearIgnoredComponents();
-			}
-
 			if (hit_result.bStartPenetrating && reverse_hit.bStartPenetrating)
 			{
 				//projectile still in material this tick
@@ -284,7 +277,7 @@ UBallisticsProcessor::ProjectileCollisionStepResult UBallisticsProcessor::Projec
 
 				DrawDebugLine(world, hit_result.ImpactPoint, reverse_hit.ImpactPoint, FColor::Orange, false, 10.f, SDPG_Foreground);
 
-				FVector start_p = reverse_hit.ImpactPoint + (end - start).GetUnsafeNormal() * 0.01f;
+				/*FVector start_p = reverse_hit.ImpactPoint + (end - start).GetUnsafeNormal() * 0.01f;
 				FHitResult rest_hit;
 				world->LineTraceSingleByChannel(rest_hit, start_p, end, channel, query_params);
 
@@ -293,18 +286,23 @@ UBallisticsProcessor::ProjectileCollisionStepResult UBallisticsProcessor::Projec
 
 				if (height_field_collision)
 				{
-					context.Defer().DestroyEntity(context.GetEntity(i));
+					KillProjectile(context, i);
 					DrawDebugSphere(world, height_field_pos, 100.f, 12, FColor::Green, false, 10.f);
-				}
+				}*/
 
 			}
 		}
 		else
 		{
-			context.Defer().DestroyEntity(context.GetEntity(i));
+			KillProjectile(context, i);
 			DrawDebugSphere(world, height_field_pos, 100.f, 12, FColor::Green, false, 10.f);
 		}
 	}
 	return_data.penetrated_depth *= UE_TO_METRIC_UNITS;
 	return return_data;
+}
+
+void UBallisticsProcessor::KillProjectile(FMassExecutionContext& context, int i)
+{
+	context.Defer().DestroyEntity(context.GetEntity(i));
 }

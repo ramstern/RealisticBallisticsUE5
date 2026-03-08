@@ -104,7 +104,7 @@ void ABallisticsTestPawn::OnShoot(const FInputActionValue& action)
     projectile_properties.drag_model = FProjectileProperties::G7;
     projectile_properties.ballistic_coefficient = 0.236f;
 
-	auto entity = ballistics_sys->Projectile(start, dir, 0.56f, projectile_properties, 900.f);
+	auto entity = ballistics_sys->Projectile(start, dir, projectile_properties, 900.f);
     current_proj = entity;
 }
 void ABallisticsTestPawn::OnZoom(const FInputActionValue& action)
