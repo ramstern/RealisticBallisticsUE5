@@ -38,7 +38,7 @@ void UBallisticsProcessor::Execute(FMassEntityManager& entity_manager, FMassExec
 
 	int32 substeps = 0;
 	step_accumulator += context.GetDeltaTimeSeconds();
-	while(step_accumulator >= sim_dt && substeps < MAX_SUBSTEPS)
+	while (step_accumulator >= sim_dt && substeps < MAX_SUBSTEPS)
 	{
 		step_accumulator -= sim_dt;
 		TickBallistics(context, sim_dt);
@@ -71,7 +71,13 @@ void UBallisticsProcessor::TickBallistics(FMassExecutionContext& context, float 
 				auto& projectile_hitdata = projectile_hitdatas[i];
 				const auto& projectile_properties = projectile_datas[i];
 
-				if(projectile_transform.position.Z < ballistics_settings->destroy_projectile_below) KillProjectile(context, i);
+				bool kill_rule = projectile_physdata.velocity.SquaredLength() < 10.f && projectile_hitdata.total_penetration > UE_KINDA_SMALL_NUMBER;
+				if (projectile_transform.position.Z < ballistics_settings->destroy_projectile_below || kill_rule) 
+				{
+					KillProjectile(context, i);
+					DrawDebugPoint(world, static_cast<FVector>(projectile_transform.position), 5.f, FColor::Green, false, 10.f, SDPG_Foreground);
+					continue;
+				}
 
 				if (projectile_hitdata.started_penetration)
 				{
@@ -85,13 +91,11 @@ void UBallisticsProcessor::TickBallistics(FMassExecutionContext& context, float 
 						if (!collision_data.is_penetrating)
 						{
 							projectile_hitdata.started_penetration = false;
-							break;
 						}
-						else 
+						else
 						{
-							// do something with the projectile 
-							projectile_physdata.external_force += static_cast<FVector3f>(FMath::VRand()) * 100.f;
-							projectile_physdata.external_force += -0.5f * (projectile_physdata.velocity);
+							projectile_hitdata.started_penetration = true;
+							ApplyPenetrationResistance(projectile_properties, projectile_physdata, collision_data);
 						}
 					}
 				}
@@ -100,42 +104,61 @@ void UBallisticsProcessor::TickBallistics(FMassExecutionContext& context, float 
 					ProjectileIntegrateStep(dt, projectile_properties, projectile_transform, projectile_physdata, ballistics_sys);
 					auto collision_data = ProjectileCollisionStep(i, projectile_transform, context, channel);
 
-					projectile_hitdata.total_penetration += collision_data.penetrated_depth;
+					//projectile_hitdata.total_penetration += collision_data.penetrated_depth;`
 
-					if (!projectile_hitdata.started_penetration && collision_data.penetrated_depth > FLT_EPSILON)
+					if (collision_data.is_penetrating)
 					{
 						projectile_hitdata.started_penetration = true;
+
 						projectile_transform.position = collision_data.entry_point;
+						float remaining_time = (1.f - collision_data.time_alpha) * dt;
 
-						projectile_hitdata.total_penetration -= collision_data.penetrated_depth;
+						// we need to set the position of the projectile to the entry point and catch up to its remaining time
+						float catchup_steps = remaining_time / penetration_dt;
+						int real_steps = FMath::Floor(catchup_steps);
+						float decimal_step = catchup_steps - static_cast<float>(real_steps);
 
-						float vel_mag = projectile_physdata.velocity.Length();
-						int catchup_steps = FMath::Max(collision_data.penetrated_depth / (vel_mag * penetration_dt), 1);
-
-
-						for (int step = 0; step < catchup_steps; step++)
+						for (int step = 0; step < real_steps; step++)
 						{
 							ProjectileIntegrateStep(penetration_dt, projectile_properties, projectile_transform, projectile_physdata, ballistics_sys);
 							auto substep_collision_data = ProjectileCollisionStep(i, projectile_transform, context, channel);
 
 							projectile_hitdata.total_penetration += substep_collision_data.penetrated_depth;
-							if(!substep_collision_data.is_penetrating)
+							if (!substep_collision_data.is_penetrating)
 							{
 								projectile_hitdata.started_penetration = false;
-								break;
 							}
-							else 
+							else
 							{
-								projectile_physdata.external_force += static_cast<FVector3f>(FMath::VRand()) * 100.f;
-								projectile_physdata.external_force += - 0.5f * (projectile_physdata.velocity);
+								projectile_hitdata.started_penetration = true;
+								ApplyPenetrationResistance(projectile_properties, projectile_physdata, substep_collision_data);
 							}
-
 						}
-						continue;
+						if(decimal_step > UE_KINDA_SMALL_NUMBER)
+						{
+							ProjectileIntegrateStep(decimal_step * penetration_dt, projectile_properties, projectile_transform, projectile_physdata, ballistics_sys);
+							auto substep_collision_data = ProjectileCollisionStep(i, projectile_transform, context, channel);
+
+							projectile_hitdata.total_penetration += substep_collision_data.penetrated_depth;
+							if (!substep_collision_data.is_penetrating)
+							{
+								projectile_hitdata.started_penetration = false;
+							}
+							else
+							{
+								projectile_hitdata.started_penetration = true;
+								ApplyPenetrationResistance(projectile_properties, projectile_physdata, substep_collision_data);
+							}
+						}
 					}
 				}
 			}
 		});
+}
+
+UBallisticsProcessor::State UBallisticsProcessor::ComputeDerivative(const State& state, FVector3f acceleration)
+{
+	return State{ .pos = state.vel, .vel = acceleration };
 }
 
 void UBallisticsProcessor::ProjectileIntegrateStep(float dt,
@@ -184,6 +207,8 @@ void UBallisticsProcessor::ProjectileIntegrateStep(float dt,
 		cd_curve = nullptr;
 	}
 
+	float air_density = ballistics_sys->GetAirDensity();
+
 	// M
 	float mach_number = projectile_physdata.velocity.Length() / SOUND_SPEED;
 
@@ -206,21 +231,53 @@ void UBallisticsProcessor::ProjectileIntegrateStep(float dt,
 	FVector3f relative_velocity = projectile_physdata.velocity - wind_velocity;
 
 	// a = p pi r^2 SD/C Cstd / 2 m (can be simplified, but later)
-	FVector3f drag_accel = -ballistics_sys->GetAirDensity() * cross_section_area * (form_factor * standard_cd) / (2.f * projectile_properties.mass) *
+	FVector3f drag_accel = -air_density * cross_section_area * (form_factor * standard_cd) / (2.f * projectile_properties.mass) *
 		relative_velocity.Length() * relative_velocity;
 
-	projectile_transform.previous_position = projectile_transform.position;
+	projectile_transform.previous_position = projectile_transform.position;                         
 
-	//DrawDebugPoint(GetWorld(), static_cast<FVector>(projectile_transform.position), 3.f, FColor::Red, false, 10.f, SDPG_Foreground);
+	FVector3f i = relative_velocity.GetUnsafeNormal();
+	float eff_yaw = FMath::Acos(FVector3f::DotProduct(projectile_transform.symmetry_axis, i));
+
+	//GEngine->AddOnScreenDebugMessage(2, 1.f, FColor::White, FString::Printf(TEXT("%f"), FMath::RadiansToDegrees(delta)));
+
+	const float lift_force_coeff = 1.f;
+	float nonlinear_lift_coeff = lift_force_coeff + (lift_force_coeff * lift_force_coeff * lift_force_coeff) * (eff_yaw * eff_yaw);
+
+	projectile_physdata.external_force += 0.5f * air_density * cross_section_area * nonlinear_lift_coeff * (relative_velocity.Length() * relative_velocity.Length()) * i.Cross(projectile_transform.symmetry_axis.Cross(i));
 
 	FVector3f gravity_accel = ballistics_sys->GetGravity();
 	FVector3f force_accel = projectile_physdata.external_force / projectile_properties.mass;
-	projectile_physdata.acceleration = drag_accel + gravity_accel + force_accel;
-	//semi-implicit euler
-	projectile_physdata.velocity += projectile_physdata.acceleration * dt;
-	projectile_transform.position += (projectile_physdata.velocity * TO_UE_UNITS) * dt;
+	projectile_physdata.acceleration = (drag_accel + gravity_accel + force_accel) * TO_UE_UNITS;
 
+	float speed_sq = projectile_physdata.velocity.SquaredLength();
+	float new_speed_sq = FMath::Max(0.f, speed_sq - 2.f * projectile_physdata.external_energy_loss / projectile_properties.mass);
+	float loss_factor = FMath::Sqrt(new_speed_sq / speed_sq);
+
+	projectile_physdata.velocity *= loss_factor;
+
+	//fixed step Rk4
+	State current_state{ .pos = projectile_transform.position, .vel = projectile_physdata.velocity * TO_UE_UNITS };
+
+	State k1_deriv = ComputeDerivative(current_state, projectile_physdata.acceleration);
+	State k2_deriv = ComputeDerivative(current_state + k1_deriv * (dt / 2.f), projectile_physdata.acceleration);
+	State k3_deriv = ComputeDerivative(current_state + k2_deriv * (dt / 2.f), projectile_physdata.acceleration);
+	State k4_deriv = ComputeDerivative(current_state + k3_deriv * dt, projectile_physdata.acceleration);
+
+	State new_state = current_state + (k1_deriv + k2_deriv * 2.f + k3_deriv * 2.f + k4_deriv) * (dt / 6.f);
+
+	projectile_physdata.velocity = new_state.vel * UE_TO_METRIC_UNITS;
+	projectile_transform.position = new_state.pos;
+
+	if(projectile_physdata.velocity.ContainsNaN() || projectile_transform.position.ContainsNaN())
+	{
+		check(false);
+	}
+
+	projectile_transform.yaw = eff_yaw;
+	 
 	projectile_physdata.external_force = FVector3f(0.f);
+	projectile_physdata.external_energy_loss = 0.f;
 }
 
 UBallisticsProcessor::ProjectileCollisionStepResult UBallisticsProcessor::ProjectileCollisionStep(const int i, const FProjectileTransform& projectile_transform, FMassExecutionContext& context, ECollisionChannel channel)
@@ -234,10 +291,8 @@ UBallisticsProcessor::ProjectileCollisionStepResult UBallisticsProcessor::Projec
 	query_params.bReturnPhysicalMaterial = true;
 	world->LineTraceSingleByChannel(hit_result, start, end, channel, query_params);
 
-	DrawDebugLine(world, start, end, FColor::Red, false, 10.f, 0);
-
 	//penetration of projectile this tick
-	ProjectileCollisionStepResult return_data{0.f, false};
+	ProjectileCollisionStepResult return_data{ 0.f,0.f, false };
 
 	if (hit_result.bBlockingHit)
 	{
@@ -256,6 +311,7 @@ UBallisticsProcessor::ProjectileCollisionStepResult UBallisticsProcessor::Projec
 				return_data.penetrated_depth = FVector::Dist(start, end);
 				return_data.is_penetrating = true;
 				return_data.entry_point = static_cast<FVector3f>(hit_result.ImpactPoint);
+				return_data.time_alpha = 1.f;
 
 				DrawDebugLine(world, start, end, FColor::Orange, false, 10.f, SDPG_Foreground);
 			}
@@ -265,6 +321,7 @@ UBallisticsProcessor::ProjectileCollisionStepResult UBallisticsProcessor::Projec
 				return_data.penetrated_depth = FVector::Dist(hit_result.ImpactPoint, end);
 				return_data.is_penetrating = true;
 				return_data.entry_point = static_cast<FVector3f>(hit_result.ImpactPoint);
+				return_data.time_alpha = hit_result.Distance / FVector::Dist(start, end);
 
 				DrawDebugLine(world, hit_result.ImpactPoint, end, FColor::Orange, false, 10.f, SDPG_Foreground);
 			}
@@ -272,8 +329,10 @@ UBallisticsProcessor::ProjectileCollisionStepResult UBallisticsProcessor::Projec
 			{
 				//projectile left material in this tick
 				return_data.penetrated_depth = FVector::Dist(hit_result.ImpactPoint, reverse_hit.ImpactPoint);
-				return_data.is_penetrating = false;
+				return_data.is_penetrating = true;
 				return_data.entry_point = static_cast<FVector3f>(hit_result.ImpactPoint);
+				float dist = FVector::Dist(start, end);
+				return_data.time_alpha = hit_result.Distance / dist;
 
 				DrawDebugLine(world, hit_result.ImpactPoint, reverse_hit.ImpactPoint, FColor::Orange, false, 10.f, SDPG_Foreground);
 
@@ -294,12 +353,28 @@ UBallisticsProcessor::ProjectileCollisionStepResult UBallisticsProcessor::Projec
 		}
 		else
 		{
+			end = height_field_pos;
 			KillProjectile(context, i);
-			DrawDebugSphere(world, height_field_pos, 100.f, 12, FColor::Green, false, 10.f);
+			DrawDebugPoint(world, height_field_pos, 5.f, FColor::Green, false, 10.f, SDPG_Foreground);
 		}
 	}
+
+	DrawDebugLine(world, start, end, FColor::Red, false, 10.f);
+
 	return_data.penetrated_depth *= UE_TO_METRIC_UNITS;
 	return return_data;
+}
+
+void UBallisticsProcessor::ApplyPenetrationResistance(const FProjectileProperties& projectile_properties, FProjectilePhysicsData& projectile_physdata, const ProjectileCollisionStepResult& collision_data)
+{
+	float surface_area = UE_PI * (projectile_properties.diameter * 0.5f) * (projectile_properties.diameter * 0.5f);
+	float y_eff = 1.f; //resistance coeff
+	float k = 1.f; //coeff multiplier
+
+	float resist_force = surface_area * (y_eff + k * 2400.f * projectile_physdata.velocity.SquaredLength());
+	float energy_loss = resist_force * collision_data.penetrated_depth;
+
+	projectile_physdata.external_energy_loss += energy_loss;
 }
 
 void UBallisticsProcessor::KillProjectile(FMassExecutionContext& context, int i)

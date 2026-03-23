@@ -97,12 +97,14 @@ void ABallisticsTestPawn::OnShoot(const FInputActionValue& action)
 	FVector3f start = static_cast<FVector3f>(eye + FVector(0.f, 0.f, -50.f));
 	FVector3f dir = static_cast<FVector3f>(rot.Vector());
 
+    //.308 lapua
 	FProjectileProperties projectile_properties;
 	projectile_properties.diameter = 0.00782f;
 	projectile_properties.length = 0.015f;
 	projectile_properties.mass = 0.009f;
     projectile_properties.drag_model = FProjectileProperties::G7;
     projectile_properties.ballistic_coefficient = 0.236f;
+    projectile_properties.quality = 1.f;
 
 	auto entity = ballistics_sys->Projectile(start, dir, projectile_properties, 900.f);
     current_proj = entity;

@@ -3,6 +3,7 @@
 #include "MassExternalSubsystemTraits.h"
 #include "MassEntityHandle.h"
 #include "Engine/DeveloperSettings.h"
+#include <random>
 #include "BallisticsSubsystem.generated.h"
 
 struct FProjectileTransform;
@@ -14,6 +15,10 @@ struct FProjectileBarrel
 
 	float length;
 	float twist_rate;
+	float quality;
+	float horizontal_mean_bias;
+	float vertical_mean_bias;
+	float yaw_stddev;
 };
 
 //https://github.com/getnamo/MassCommunitySample/tree/main?tab=readme-ov-file#44-subsystems
@@ -47,12 +52,18 @@ protected:
 private:
 	UE_MT_DECLARE_RW_ACCESS_DETECTOR(AccessDetector);
 
-	FProjectileBarrel current_barrel = {.length = 0.56f, .twist_rate = 0.254f};
+	FProjectileBarrel current_barrel = {.length = 0.56f, .twist_rate = 0.254f, .quality = 1.f, .horizontal_mean_bias = 0.f, .vertical_mean_bias = 0.f, .yaw_stddev = 1.f};
 
 	FVector3f gravity = FVector3f(0.f, 0, -9.81f);
 	FVector3f wind_vector = FVector3f(0.f, 10.6f, 0.f);
 	//sea level, 15 deg cel
 	float air_density = 1.2250f;
+
+	std::random_device rd{};
+	std::mt19937 rand_gen{rd()};
+
+
+	float CalculateInitialYawDegrees(const FProjectileProperties& properties);
 };
 
 template<>

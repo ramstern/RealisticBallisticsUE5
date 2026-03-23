@@ -17,6 +17,7 @@ struct REALISTICBALLISTICS_API FProjectileProperties : public FMassFragment
 	float diameter;
 	float ballistic_coefficient;
 	float length;
+	float quality;
 
 	enum DragModel
 	{
@@ -37,9 +38,8 @@ struct REALISTICBALLISTICS_API FProjectileTransform : public FMassFragment
 
 	FVector3f position;
 	FVector3f previous_position;
+	FVector3f symmetry_axis;
 	float yaw;
-	float pitch;
-	float roll;
 };
 
 USTRUCT()
@@ -51,6 +51,7 @@ struct REALISTICBALLISTICS_API FProjectilePhysicsData : public FMassFragment
 	FVector3f velocity;
 	FVector3f acceleration;
 	float angular_spin;
+	float external_energy_loss;
 };
 
 USTRUCT()
@@ -59,6 +60,5 @@ struct REALISTICBALLISTICS_API FProjectileHitData : public FMassFragment
 	GENERATED_BODY()
 
 	float total_penetration;
-	float starting_penetration;
 	bool started_penetration;
 };

@@ -32,6 +32,7 @@ private:
 
 	struct ProjectileCollisionStepResult
 	{
+		float time_alpha;
 		float penetrated_depth;
 		bool is_penetrating;
 		FVector3f entry_point;
@@ -42,10 +43,35 @@ private:
 
 	void TickBallistics(FMassExecutionContext& context, float dt);
 
+	struct State
+	{
+		FVector3f pos;
+		FVector3f vel;
+
+		State operator+(const State& other) const
+		{
+			return State{
+				pos + other.pos,
+				vel + other.vel
+			};
+		}
+		State operator*(float scalar) const
+		{
+			return State{
+				pos * scalar,
+				vel * scalar
+			};
+		}
+	};
+
+	State ComputeDerivative(const State& state, FVector3f acceleration);
+
 	void ProjectileIntegrateStep(float dt, const FProjectileProperties& projectile_properties, FProjectileTransform& projectile_transform, FProjectilePhysicsData& projectile_physdata,
 								 const UBallisticsSubsystem* ballistics_sys);
 	
 	ProjectileCollisionStepResult ProjectileCollisionStep(const int proj_ent, const FProjectileTransform& projectile_transform, FMassExecutionContext& context, ECollisionChannel channel);
+
+	void ApplyPenetrationResistance(const FProjectileProperties& projectile_properties, FProjectilePhysicsData& projectile_physdata, const ProjectileCollisionStepResult& collision_data);
 
 	void KillProjectile(FMassExecutionContext& context, int i);
 

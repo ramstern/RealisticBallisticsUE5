@@ -21,16 +21,22 @@ FMassEntityHandle UBallisticsSubsystem::Projectile(const FVector3f& proj_pos, co
 	FProjectileTransform projectile_transform;
 	projectile_transform.position = proj_pos;
 	projectile_transform.previous_position = proj_pos;
+	projectile_transform.yaw = FMath::DegreesToRadians(CalculateInitialYawDegrees(properties));
+	FVector3f angled_dir = FRotator3f(projectile_transform.yaw, 0.f, 0.f).Quaternion() * dir;
+	projectile_transform.symmetry_axis = angled_dir.RotateAngleAxisRad(FMath::FRandRange(0.f, TWO_PI), dir);
+
+	DrawDebugLine(GetWorld(), static_cast<FVector>(proj_pos), static_cast<FVector>(proj_pos + projectile_transform.symmetry_axis * 100.f), FColor::White, false, 10.f);
 
 	FProjectilePhysicsData projectile_physdata;
 	projectile_physdata.velocity = dir * muzzle_vel;
 	projectile_physdata.external_force = FVector3f(0.f);
 	projectile_physdata.angular_spin = 2.f * UE_PI * (muzzle_vel / current_barrel.twist_rate);
+	projectile_physdata.external_energy_loss = 0.f;
 
 	FProjectileHitData projectile_hitdata;
 	projectile_hitdata.started_penetration = false;
 	projectile_hitdata.total_penetration = 0.f;
-	projectile_hitdata.starting_penetration = 0.f;
+	
 
 	const FMassEntityHandle entity = entity_manager.ReserveEntity();
 	entity_manager.Defer().PushCommand<
@@ -82,6 +88,20 @@ void UBallisticsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 void UBallisticsSubsystem::Deinitialize()
 {
 	Super::Deinitialize();
+}
+
+float UBallisticsSubsystem::CalculateInitialYawDegrees(const FProjectileProperties& properties)
+{
+	float quality_scale = properties.quality;
+
+	std::normal_distribution distribution_p{current_barrel.horizontal_mean_bias, current_barrel.yaw_stddev * quality_scale};
+	float angle_of_attack = distribution_p(rand_gen);
+
+	std::normal_distribution distribution_y{ current_barrel.horizontal_mean_bias, current_barrel.yaw_stddev * quality_scale};
+	float angle_of_sideslip = distribution_y(rand_gen);
+
+	float eff_yaw = FMath::Sqrt((angle_of_attack*angle_of_attack) + (angle_of_sideslip*angle_of_sideslip));
+	return eff_yaw;
 }
 
 UBallisticsProjectSettings::UBallisticsProjectSettings(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
