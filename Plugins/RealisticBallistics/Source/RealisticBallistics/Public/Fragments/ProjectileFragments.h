@@ -51,7 +51,7 @@ struct REALISTICBALLISTICS_API FProjectilePhysicsData : public FMassFragment
 	FVector3f velocity;
 	FVector3f acceleration;
 	float angular_spin;
-	float external_energy_loss;
+	//float external_energy_loss;
 };
 
 USTRUCT()
@@ -61,4 +61,5 @@ struct REALISTICBALLISTICS_API FProjectileHitData : public FMassFragment
 
 	float total_penetration;
 	bool started_penetration;
+	//bool lodged;
 };

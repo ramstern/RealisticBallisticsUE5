@@ -15,6 +15,8 @@
 struct FProjectileProperties;
 struct FProjectileTransform;
 struct FProjectilePhysicsData;
+struct FProjectileHitData;
+class UBallisticsProjectSettings;
 class UBallisticsSubsystem;
 
 UCLASS()
@@ -35,6 +37,20 @@ private:
 		float time_alpha;
 		float penetrated_depth;
 		bool is_penetrating;
+		bool is_lodged;
+		FVector3f entry_point;
+	};
+	struct ProjectileStepResult
+	{
+		enum DesiredResponse
+		{
+			IDLE,
+			PENETRATE,
+			DEFLECT,
+			DEAD
+		} desired_response;
+
+		float time_alpha;
 		FVector3f entry_point;
 	};
 
@@ -69,7 +85,8 @@ private:
 	void ProjectileIntegrateStep(float dt, const FProjectileProperties& projectile_properties, FProjectileTransform& projectile_transform, FProjectilePhysicsData& projectile_physdata,
 								 const UBallisticsSubsystem* ballistics_sys);
 	
-	ProjectileCollisionStepResult ProjectileCollisionStep(const int proj_ent, const FProjectileTransform& projectile_transform, FMassExecutionContext& context, ECollisionChannel channel);
+	ProjectileCollisionStepResult ProjectileCollisionStep(const int proj_ent, const FProjectileTransform& projectile_transform, const FProjectilePhysicsData& projectile_physdata, const FProjectileHitData& projectile_hitdata, const UBallisticsProjectSettings* ballistics_settings, FMassExecutionContext& context, ECollisionChannel channel);
+	ProjectileStepResult ProjectileStep(const int proj_ent, const FProjectileTransform& projectile_transform, FMassExecutionContext& context, ECollisionChannel channel);
 
 	void ApplyPenetrationResistance(const FProjectileProperties& projectile_properties, FProjectilePhysicsData& projectile_physdata, const ProjectileCollisionStepResult& collision_data);
 

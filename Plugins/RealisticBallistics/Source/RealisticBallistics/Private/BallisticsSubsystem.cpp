@@ -31,10 +31,11 @@ FMassEntityHandle UBallisticsSubsystem::Projectile(const FVector3f& proj_pos, co
 	projectile_physdata.velocity = dir * muzzle_vel;
 	projectile_physdata.external_force = FVector3f(0.f);
 	projectile_physdata.angular_spin = 2.f * UE_PI * (muzzle_vel / current_barrel.twist_rate);
-	projectile_physdata.external_energy_loss = 0.f;
+	//projectile_physdata.external_energy_loss = 0.f;
 
 	FProjectileHitData projectile_hitdata;
 	projectile_hitdata.started_penetration = false;
+	//projectile_hitdata.lodged = false;
 	projectile_hitdata.total_penetration = 0.f;
 	
 
