@@ -42,7 +42,8 @@ public class RealisticBallistics : ModuleRules
 				"DeveloperSettings",
 				"MassCommon",
 				"MassSimulation",
-				"Landscape"
+				"Landscape",
+                "PhysicsCore"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

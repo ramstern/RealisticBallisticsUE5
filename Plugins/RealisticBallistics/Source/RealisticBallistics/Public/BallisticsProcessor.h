@@ -38,6 +38,7 @@ private:
 		float penetrated_depth;
 		bool is_penetrating;
 		bool is_lodged;
+		TWeakObjectPtr<UPhysicalMaterial> phys_mat;
 		FVector3f entry_point;
 	};
 	struct ProjectileStepResult
@@ -52,6 +53,7 @@ private:
 
 		float time_alpha;
 		FVector3f entry_point;
+		FVector3f normal;
 	};
 
 	float step_accumulator = 0.f;
@@ -88,7 +90,7 @@ private:
 	ProjectileCollisionStepResult ProjectileCollisionStep(const int proj_ent, const FProjectileTransform& projectile_transform, const FProjectilePhysicsData& projectile_physdata, const FProjectileHitData& projectile_hitdata, const UBallisticsProjectSettings* ballistics_settings, FMassExecutionContext& context, ECollisionChannel channel);
 	ProjectileStepResult ProjectileStep(const int proj_ent, const FProjectileTransform& projectile_transform, FMassExecutionContext& context, ECollisionChannel channel);
 
-	void ApplyPenetrationResistance(const FProjectileProperties& projectile_properties, FProjectilePhysicsData& projectile_physdata, const ProjectileCollisionStepResult& collision_data);
+	void ApplyPenetrationResistance(const FProjectileProperties& projectile_properties, FProjectilePhysicsData& projectile_physdata, const ProjectileCollisionStepResult& collision_data, const UBallisticsProjectSettings& ballistics_settings);
 
 	void KillProjectile(FMassExecutionContext& context, int i);
 

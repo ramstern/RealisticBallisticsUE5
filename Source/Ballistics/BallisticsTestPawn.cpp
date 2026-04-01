@@ -94,10 +94,10 @@ void ABallisticsTestPawn::OnShoot(const FInputActionValue& action)
     FRotator rot;
     GetActorEyesViewPoint(eye, rot);
 
-	FVector3f start = static_cast<FVector3f>(eye + FVector(0.f, 0.f, -50.f));
+	FVector3f start = static_cast<FVector3f>(eye + FVector(0.f, 0.f, -5.f));
 	FVector3f dir = static_cast<FVector3f>(rot.Vector());
 
-    //.308 lapua
+    //.308 lapua 155 Scenar 
 	FProjectileProperties projectile_properties;
 	projectile_properties.diameter = 0.00782f;
 	projectile_properties.length = 0.015f;
@@ -106,8 +106,11 @@ void ABallisticsTestPawn::OnShoot(const FInputActionValue& action)
     projectile_properties.ballistic_coefficient = 0.236f;
     projectile_properties.quality = 1.f;
 
-	auto entity = ballistics_sys->Projectile(start, dir, projectile_properties, 900.f);
-    current_proj = entity;
+    for (size_t i = 0; i < 500; i++)
+    {
+        auto entity = ballistics_sys->Projectile(start + FVector3f(0.f, i * 1.f, 0.f), dir, projectile_properties, 900.f);
+        current_proj = entity;
+    }
 }
 void ABallisticsTestPawn::OnZoom(const FInputActionValue& action)
 {

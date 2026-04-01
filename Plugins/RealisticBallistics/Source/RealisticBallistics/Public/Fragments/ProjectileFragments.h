@@ -51,7 +51,7 @@ struct REALISTICBALLISTICS_API FProjectilePhysicsData : public FMassFragment
 	FVector3f velocity;
 	FVector3f acceleration;
 	float angular_spin;
-	//float external_energy_loss;
+	float ref_fired_speed;
 };
 
 USTRUCT()

@@ -76,6 +76,24 @@ struct TMassExternalSubsystemTraits<UBallisticsSubsystem> final
 	};
 };
 
+USTRUCT(BlueprintType)
+struct FBallisticsMaterialData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ballistics")
+	float resistance = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ballistics")
+	float tuning_coeff = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ballistics")
+	float max_penetration_dev_deg = 2.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ballistics")
+	float ricochet_chance_scale = 1.0f;
+};
+
 //https://unreal-garden.com/tutorials/developer-settings/
 UCLASS(Config = Game, DefaultConfig)
 class REALISTICBALLISTICS_API UBallisticsProjectSettings : public UDeveloperSettings
@@ -94,4 +112,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Config, Category = "Ballistics|Simulation")
 	float destroy_projectile_below = -1000.f;
+
+
+
+	UPROPERTY(EditAnywhere, Config, Category = "Ballistics|Penetration")
+	TMap<TSoftObjectPtr<UPhysicalMaterial>, FBallisticsMaterialData> ballistics_material_data;
 };
